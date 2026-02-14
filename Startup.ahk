@@ -2,12 +2,8 @@
 #SingleInstance Force
 SetTitleMatchMode 2
 
-if not A_IsAdmin
-{
-    try
-    {
-        Run "*RunAs `"" A_ScriptFullPath "`""
-    }
+if !A_IsAdmin {
+    try Run '*RunAs "' A_AhkPath '" "' A_ScriptFullPath '"', A_ScriptDir
     ExitApp
 }
 
@@ -16,36 +12,12 @@ if not A_IsAdmin
 ;
 
 #1::
-!1::
-{
-    Run "explorer.exe /n, D:\"
-    if WinWait("D: ahk_class CabinetWClass",, 1)
-        WinActivate
-}
-
-!q::
-{
-    Run 'explorer.exe /n, "D:\d1 Downloads"'
-    if WinWait("d1 Downloads ahk_class CabinetWClass",, 1) 
-        WinActivate
-}
-
-!w::
-{
-    Run 'explorer.exe /n, "D:\d2 Screenshots"'
-    if WinWait("d2 Screenshots ahk_class CabinetWClass",, 1)
-        WinActivate
-}
-
-!d::
-{
-    Run 'explorer.exe /n, "D:\Zx\Wallpapers\Wallpapers\In Use"'
-    if WinWait("In Use ahk_class CabinetWClass",, 1)
-        WinActivate
-}
+!1::openNewExplorerWindow("D:")
+!q::openNewExplorerWindow("D:\d1 Downloads")
+!w::openNewExplorerWindow("D:\d2 Screenshots")
+!d::openNewExplorerWindow("D:\Zx\Wallpapers\Wallpapers\In Use")
 
 !e::Send "^{PrintScreen}"
-
 !r::Send "#{PrintScreen}"
 
 !x::
@@ -63,6 +35,30 @@ if not A_IsAdmin
         WinMaximize
         WinActivate
     }
+}
+
+_ifListHasHandle(list, handle){
+    for _, h in list
+        if (h = handle)
+            return true
+    return false
+}
+
+openNewExplorerWindow(path){
+    before := WinGetList("ahk_class CabinetWClass")
+    Run 'explorer.exe /n, "' path '"'
+    deadline := A_TickCount + 1000
+    while (A_TickCount < deadline) {
+        Sleep 25
+        after := WinGetList("ahk_class CabinetWClass")
+        for _, handle in after {
+            if !_ifListHasHandle(before, handle) {
+                WinActivate("ahk_id " handle)
+                return handle
+            }
+        }
+    }
+    return 0
 }
 
 ;
@@ -84,24 +80,33 @@ if not A_IsAdmin
     if (lastClipboardAsList.Length = 0)
         return
 
+    failCount := 0
     for _, oldFilePath in lastClipboardAsList {
         fileNameWithoutExtension := getFileNameWithoutExtension(oldFilePath)
         newFilePath := getUniqueFileName(activeWindowNnoPath "\" fileNameWithoutExtension ".lnk")
-        try FileCreateShortcut oldFilePath, newFilePath
+        try { FileCreateShortcut oldFilePath, newFilePath }
+        catch { failCount+=1 }
     }
+    if failCount { SoundPlay "*-1" }
 }
 #HotIf
 
 getActiveWindowNnoPath() {
-    windowHandle := WinExist("A")
-    comObject_object := ComObject("Shell.Application")
-    for window in comObject_object.Windows {
-        try {
-            if (window.HWND = windowHandle)
-                return window.Document.Folder.Self.Path
-        }
+    clipboard := ClipboardAll()
+    try {
+        A_Clipboard := ""
+        Send "^l"
+        Sleep 25
+        Send "^c"
+        if !ClipWait(0.3)
+            return ""
+        path := Trim(A_Clipboard, "`r`n`t ")
+        Send "{Esc}"
+        return DirExist(path) ? path : ""
     }
-    return ""
+    finally {
+        A_Clipboard := clipboard
+    }
 }
 
 getLastClipboardAsList() {
